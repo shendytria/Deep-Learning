@@ -1,14 +1,19 @@
 import os
 import time
 import numpy as np
+import tensorflow as tf
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.applications import Xception
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Dense, GlobalAveragePooling2D, Dropout 
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping 
-from sklearn.metrics import classification_report, roc_auc_score
+# Perbaikan: Impor metrics secara namespace
+from sklearn import metrics 
+from sklearn.metrics import classification_report, roc_auc_score 
 import json
+import matplotlib.pyplot as plt 
+import seaborn as sns
 
 # ====== KONFIGURASI DASAR ======
 IMG_SIZE = (150, 150)  # Pertahankan ukuran kecil untuk memori
@@ -34,6 +39,7 @@ train_gen = train_datagen.flow_from_directory(DATASET_DIR, target_size=IMG_SIZE,
 val_gen = train_datagen.flow_from_directory(DATASET_DIR, target_size=IMG_SIZE, batch_size=BATCH_SIZE, subset='validation')
 test_gen = test_datagen.flow_from_directory(DATASET_DIR, target_size=IMG_SIZE, batch_size=BATCH_SIZE, shuffle=False)
 
+CLASS_LABELS = sorted(os.listdir(DATASET_DIR))
 
 # ====== MODEL XCEPTION (PENAMBAHAN DROPOUT) ======
 base_model = Xception(weights='imagenet', include_top=False, input_shape=(IMG_SIZE[0], IMG_SIZE[1], 3))
@@ -79,6 +85,63 @@ history = model.fit(
 )
 training_time = time.time() - start_train
 
+# ====== FUNGSI VISUALISASI GRAFIK ACCURACY & LOSS ======
+def plot_history(history):
+    plt.figure(figsize=(12, 4))
+    
+    # --- Subplot 1: Model Accuracy ---
+    plt.subplot(1, 2, 1)
+    plt.plot(history.history['accuracy'], label='Train Accuracy')
+    plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
+    plt.title('Model Accuracy')
+    plt.ylabel('Accuracy')
+    plt.xlabel('Epoch')
+    plt.legend(loc='lower right')
+
+    # --- Subplot 2: Model Loss ---
+    plt.subplot(1, 2, 2)
+    plt.plot(history.history['loss'], label='Train Loss')
+    plt.plot(history.history['val_loss'], label='Validation Loss')
+    plt.title('Model Loss')
+    plt.ylabel('Loss')
+    plt.xlabel('Epoch')
+    plt.legend(loc='upper right')
+    
+    plt.tight_layout()
+    
+    plot_path = os.path.join(RESULTS_DIR, 'training_plot.png')
+    plt.savefig(plot_path)
+    print(f"Grafik training tersimpan di: {plot_path}")
+
+
+# ====== FUNGSI PLOTTING CONFUSION MATRIX ======
+def plot_confusion_matrix(y_true, y_pred_classes, class_labels):
+    # Hitung Confusion Matrix data mentah
+    cm = metrics.confusion_matrix(y_true, y_pred_classes)
+    
+    plt.figure(figsize=(12, 10))
+    # Buat heatmap menggunakan Seaborn
+    sns.heatmap(
+        cm, 
+        annot=True, 
+        fmt='d',    
+        cmap='Blues', 
+        xticklabels=class_labels, 
+        yticklabels=class_labels
+    )
+    plt.title('Confusion Matrix')
+    plt.ylabel('True Label')
+    plt.xlabel('Predicted Label')
+    
+    # Simpan grafik
+    plot_path = os.path.join(RESULTS_DIR, 'confusion_matrix.png')
+    plt.savefig(plot_path)
+    print(f"Confusion Matrix tersimpan di: {plot_path}")
+
+
+# Panggil fungsi plot setelah training selesai
+plot_history(history)
+
 # ====== TESTING & EVALUASI (Load model terbaik yang disimpan) ======
 # Load model terbaik sebelum testing untuk hasil yang paling akurat
 model.load_weights(os.path.join(RESULTS_DIR, 'best_model.keras'))
@@ -89,6 +152,9 @@ testing_time = time.time() - start_test
 
 y_true = test_gen.classes
 y_pred_classes = np.argmax(y_pred, axis=1)
+
+# Panggil fungsi Confusion Matrix
+plot_confusion_matrix(y_true, y_pred_classes, CLASS_LABELS)
 
 report = classification_report(y_true, y_pred_classes, output_dict=True)
 roc_auc = roc_auc_score(y_true, y_pred, multi_class='ovr')
@@ -105,3 +171,5 @@ with open(os.path.join(RESULTS_DIR, 'evaluation_report.txt'), 'w') as f:
 print("\n✅ Training & evaluasi selesai!")
 print(f"🧾 Laporan tersimpan di: {os.path.join(RESULTS_DIR, 'evaluation_report.txt')}")
 print(f"💾 Model terbaik tersimpan di: {os.path.join(RESULTS_DIR, 'best_model.keras')}")
+print(f"🖼️ Grafik Training tersimpan di: {os.path.join(RESULTS_DIR, 'training_plot.png')}")
+print(f"📊 Confusion Matrix tersimpan di: {os.path.join(RESULTS_DIR, 'confusion_matrix.png')}")
